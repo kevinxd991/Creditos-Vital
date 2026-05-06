@@ -41,27 +41,18 @@ ESTADOS = [
 
 def cargar_creditos():
 
-    try:
+    response = supabase.table(
+        "creditos"
+    ).select("*").execute()
 
-        response = supabase.table(
-            "creditos"
-        ).select("*").execute()
+    st.write(response.data)
 
-        st.write("RESPUESTA SUPABASE:")
-        st.write(response)
+    data = response.data
 
-        data = response.data
+    if data:
+        return pd.DataFrame(data)
 
-        if data:
-            return pd.DataFrame(data)
-
-        return pd.DataFrame()
-
-    except Exception as e:
-
-        st.error(f"ERROR: {e}")
-
-        return pd.DataFrame()
+    return pd.DataFrame()
 
 def subir_imagen(imagen):
 
