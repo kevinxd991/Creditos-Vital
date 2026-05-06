@@ -10,13 +10,64 @@ st.set_page_config(
     layout="wide"
 )
 
+# =========================
+# SUPABASE
+# =========================
+
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-SEDES = ["Callao", "Villa el Salvador", "Punta Negra", "Ferrosal"]
-ESTADOS = ["Pendiente", "Pago parcial", "Pagado"]
+# =========================
+# LOGIN
+# =========================
+
+if "logueado" not in st.session_state:
+    st.session_state["logueado"] = False
+
+if not st.session_state["logueado"]:
+
+    st.title("🔐 LOGIN VITAL CREDIT")
+
+    usuario_input = st.text_input("Usuario")
+    contraseña_input = st.text_input("Contraseña", type="password")
+
+    if st.button("Ingresar"):
+
+        response = supabase.table("usuarios").select("*").eq(
+            "usuario",
+            usuario_input
+        ).eq(
+            "contraseña",
+            contraseña_input
+        ).execute()
+
+        if response.data:
+            st.session_state["logueado"] = True
+            st.session_state["usuario"] = usuario_input
+            st.rerun()
+        else:
+            st.error("Usuario o contraseña incorrectos.")
+
+    st.stop()
+
+# =========================
+# VARIABLES
+# =========================
+
+SEDES = [
+    "Callao",
+    "Villa el Salvador",
+    "Punta Negra",
+    "Ferrosal"
+]
+
+ESTADOS = [
+    "Pendiente",
+    "Pago parcial",
+    "Pagado"
+]
 
 MESES = {
     "Todos": 0,
@@ -34,8 +85,12 @@ MESES = {
     "Diciembre": 12,
 }
 
+# =========================
+# FUNCIONES
+# =========================
 
 def cargar_creditos():
+
     response = (
         supabase.table("creditos")
         .select("*")
@@ -50,11 +105,15 @@ def cargar_creditos():
 
 
 def estado_real(row):
+
     hoy = date.today()
 
     try:
-        vencimiento = pd.to_datetime(row["vencimiento"]).date()
-    except Exception:
+        vencimiento = pd.to_datetime(
+            row["vencimiento"]
+        ).date()
+
+    except:
         return row["estado"]
 
     if row["estado"] != "Pagado" and vencimiento < hoy:
@@ -64,12 +123,16 @@ def estado_real(row):
 
 
 def subir_archivo(archivo, bucket):
+
     if archivo is None:
         return None
 
     try:
+
         extension = archivo.name.split(".")[-1]
+
         nombre = f"{uuid.uuid4()}.{extension}"
+
         contenido = archivo.getvalue()
 
         supabase.storage.from_(bucket).upload(
@@ -81,12 +144,15 @@ def subir_archivo(archivo, bucket):
         return supabase.storage.from_(bucket).get_public_url(nombre)
 
     except Exception as e:
+
         st.error("No se pudo subir el archivo.")
         st.error(str(e))
+
         return None
 
 
 def url_valida(valor):
+
     return (
         valor is not None
         and str(valor).strip() != ""
@@ -95,8 +161,23 @@ def url_valida(valor):
         and str(valor) != "nan"
     )
 
+# =========================
+# TITULO
+# =========================
 
 st.title("💰 VITAL CREDIT")
+
+st.sidebar.success(
+    f"Usuario: {st.session_state['usuario']}"
+)
+
+if st.sidebar.button("Cerrar sesión"):
+    st.session_state["logueado"] = False
+    st.rerun()
+
+# =========================
+# MENU
+# =========================
 
 menu = st.sidebar.radio(
     "Menú",
@@ -109,33 +190,52 @@ menu = st.sidebar.radio(
     ]
 )
 
-
 # =========================
-# REGISTRAR CRÉDITO
+# REGISTRAR CREDITO
 # =========================
 
 if menu == "Registrar crédito":
+
     st.subheader("Registrar crédito")
 
     if "registro_exitoso" in st.session_state:
-        st.success(st.session_state["registro_exitoso"])
+        st.success(
+            st.session_state["registro_exitoso"]
+        )
         del st.session_state["registro_exitoso"]
 
-    with st.form("form_registro", clear_on_submit=True):
+    with st.form(
+        "form_registro",
+        clear_on_submit=True
+    ):
+
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            concepto = st.text_input("N° Orden de compra", placeholder="00035")
-            fecha = st.date_input("Fecha", value=date.today())
+
+            concepto = st.text_input(
+                "N° Orden de compra"
+            )
+
+            fecha = st.date_input(
+                "Fecha",
+                value=date.today()
+            )
 
         with col2:
-            sede = st.selectbox("Sede", SEDES)
+
+            sede = st.selectbox(
+                "Sede",
+                SEDES
+            )
+
             total = st.number_input(
                 "Total S/",
                 min_value=0.0,
                 step=0.10,
                 format="%.2f"
             )
+
             dias_credito = st.number_input(
                 "Días de crédito",
                 min_value=1,
@@ -144,25 +244,48 @@ if menu == "Registrar crédito":
             )
 
         with col3:
-            estado = st.selectbox("Estado", ESTADOS)
-            adicional = st.checkbox("¿Pedido adicional?")
+
+            estado = st.selectbox(
+                "Estado",
+                ESTADOS
+            )
+
+            adicional = st.checkbox(
+                "¿Pedido adicional?"
+            )
+
             imagen = st.file_uploader(
                 "Orden de compra",
                 type=["png", "jpg", "jpeg", "pdf"]
             )
 
-        guardar = st.form_submit_button("Guardar crédito")
+        guardar = st.form_submit_button(
+            "Guardar crédito"
+        )
 
         if guardar:
+
             if concepto.strip() == "":
-                st.error("Debes ingresar el número de OC.")
+                st.error("Debes ingresar OC.")
+
             elif total <= 0:
                 st.error("El total debe ser mayor a 0.")
-            else:
-                vencimiento = fecha + timedelta(days=int(dias_credito))
-                imagen_url = subir_archivo(imagen, "ordenes")
 
-                supabase.table("creditos").insert({
+            else:
+
+                vencimiento = fecha + timedelta(
+                    days=int(dias_credito)
+                )
+
+                imagen_url = subir_archivo(
+                    imagen,
+                    "ordenes"
+                )
+
+                supabase.table(
+                    "creditos"
+                ).insert({
+
                     "concepto": concepto,
                     "fecha": str(fecha),
                     "sede": sede,
@@ -172,74 +295,138 @@ if menu == "Registrar crédito":
                     "vencimiento": str(vencimiento),
                     "imagen": imagen_url,
                     "adicional": "Sí" if adicional else "No"
+
                 }).execute()
 
-                st.session_state["registro_exitoso"] = "Crédito registrado correctamente."
+                st.session_state[
+                    "registro_exitoso"
+                ] = "Crédito registrado correctamente."
+
                 st.rerun()
 
-
 # =========================
-# VER CRÉDITOS
+# VER CREDITOS
 # =========================
 
 if menu == "Ver créditos":
+
     st.subheader("Créditos registrados")
 
     df = cargar_creditos()
 
     if df.empty:
-        st.info("No hay créditos registrados.")
+
+        st.info("No hay créditos.")
+
     else:
-        df["estado_real"] = df.apply(estado_real, axis=1)
-        df["fecha_dt"] = pd.to_datetime(df["fecha"])
+
+        df["estado_real"] = df.apply(
+            estado_real,
+            axis=1
+        )
+
+        df["fecha_dt"] = pd.to_datetime(
+            df["fecha"]
+        )
 
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            filtro_sede = st.selectbox("Sede", ["Todas"] + SEDES)
+
+            filtro_sede = st.selectbox(
+                "Sede",
+                ["Todas"] + SEDES
+            )
 
         with col2:
+
             filtro_estado = st.selectbox(
                 "Estado",
-                ["Todos", "Pendiente", "Pago parcial", "Pagado", "Vencido"]
+                [
+                    "Todos",
+                    "Pendiente",
+                    "Pago parcial",
+                    "Pagado",
+                    "Vencido"
+                ]
             )
 
         with col3:
-            filtro_adicional = st.selectbox("Adicional", ["Todos", "Sí", "No"])
+
+            filtro_adicional = st.selectbox(
+                "Adicional",
+                ["Todos", "Sí", "No"]
+            )
 
         with col4:
-            filtro_mes = st.selectbox("Mes", list(MESES.keys()))
+
+            filtro_mes = st.selectbox(
+                "Mes",
+                list(MESES.keys())
+            )
 
         df_filtrado = df.copy()
 
         if filtro_sede != "Todas":
-            df_filtrado = df_filtrado[df_filtrado["sede"] == filtro_sede]
+            df_filtrado = df_filtrado[
+                df_filtrado["sede"] == filtro_sede
+            ]
 
         if filtro_estado != "Todos":
-            df_filtrado = df_filtrado[df_filtrado["estado_real"] == filtro_estado]
+            df_filtrado = df_filtrado[
+                df_filtrado["estado_real"] == filtro_estado
+            ]
 
         if filtro_adicional != "Todos":
-            df_filtrado = df_filtrado[df_filtrado["adicional"] == filtro_adicional]
+            df_filtrado = df_filtrado[
+                df_filtrado["adicional"] == filtro_adicional
+            ]
 
         if filtro_mes != "Todos":
             df_filtrado = df_filtrado[
-                df_filtrado["fecha_dt"].dt.month == MESES[filtro_mes]
+                df_filtrado["fecha_dt"].dt.month
+                == MESES[filtro_mes]
             ]
 
         total_general = df_filtrado["total"].sum()
-        total_pendiente = df_filtrado[df_filtrado["estado_real"] != "Pagado"]["total"].sum()
-        total_pagado = df_filtrado[df_filtrado["estado_real"] == "Pagado"]["total"].sum()
-        total_vencido = df_filtrado[df_filtrado["estado_real"] == "Vencido"]["total"].sum()
+
+        total_pendiente = df_filtrado[
+            df_filtrado["estado_real"] != "Pagado"
+        ]["total"].sum()
+
+        total_pagado = df_filtrado[
+            df_filtrado["estado_real"] == "Pagado"
+        ]["total"].sum()
+
+        total_vencido = df_filtrado[
+            df_filtrado["estado_real"] == "Vencido"
+        ]["total"].sum()
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total general", f"S/ {total_general:,.2f}")
-        c2.metric("Pendiente", f"S/ {total_pendiente:,.2f}")
-        c3.metric("Pagado", f"S/ {total_pagado:,.2f}")
-        c4.metric("Vencido", f"S/ {total_vencido:,.2f}")
+
+        c1.metric(
+            "Total general",
+            f"S/ {total_general:,.2f}"
+        )
+
+        c2.metric(
+            "Pendiente",
+            f"S/ {total_pendiente:,.2f}"
+        )
+
+        c3.metric(
+            "Pagado",
+            f"S/ {total_pagado:,.2f}"
+        )
+
+        c4.metric(
+            "Vencido",
+            f"S/ {total_vencido:,.2f}"
+        )
 
         st.divider()
 
-        df_mostrar = df_filtrado[
+        tabla = df_filtrado[
             [
                 "id",
                 "concepto",
@@ -247,374 +434,264 @@ if menu == "Ver créditos":
                 "sede",
                 "total",
                 "estado_real",
-                "dias_credito",
                 "vencimiento",
                 "adicional"
             ]
-        ].rename(columns={
-            "id": "ID",
-            "concepto": "OC",
-            "fecha": "Fecha",
-            "sede": "Sede",
-            "total": "Total S/",
-            "estado_real": "Estado",
-            "dias_credito": "Días crédito",
-            "vencimiento": "Vencimiento",
-            "adicional": "Adicional"
-        })
+        ]
 
-        st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
-
-        st.divider()
-
-        if not df_filtrado.empty:
-            st.subheader("Detalle del crédito")
-
-            credito_id = st.selectbox(
-                "Selecciona un crédito",
-                df_filtrado["id"].tolist(),
-                format_func=lambda x: (
-                    f"OC {df[df['id'] == x]['concepto'].values[0]} - "
-                    f"{df[df['id'] == x]['sede'].values[0]}"
-                )
-            )
-
-            credito = df[df["id"] == credito_id].iloc[0]
-
-            col_a, col_b = st.columns(2)
-
-            with col_a:
-                st.write(f"**OC:** {credito['concepto']}")
-                st.write(f"**Fecha:** {credito['fecha']}")
-                st.write(f"**Sede:** {credito['sede']}")
-                st.write(f"**Total:** S/ {credito['total']:,.2f}")
-                st.write(f"**Estado:** {credito['estado_real']}")
-                st.write(f"**Vencimiento:** {credito['vencimiento']}")
-                st.write(f"**Adicional:** {credito['adicional']}")
-
-            with col_b:
-                if url_valida(credito.get("imagen")):
-                    st.link_button("Descargar orden de compra", credito["imagen"])
-                else:
-                    st.info("Este crédito no tiene orden de compra registrada.")
-
+        st.dataframe(
+            tabla,
+            use_container_width=True,
+            hide_index=True
+        )
 
 # =========================
-# REGISTRAR PAGO MÚLTIPLE
+# REGISTRAR PAGO MULTIPLE
 # =========================
 
 if menu == "Registrar pago múltiple":
-    st.subheader("Registrar pago múltiple")
 
-    if "pago_exitoso" in st.session_state:
-        st.success(st.session_state["pago_exitoso"])
-        del st.session_state["pago_exitoso"]
+    st.subheader("Registrar pago múltiple")
 
     df = cargar_creditos()
 
     if df.empty:
-        st.info("No hay créditos registrados.")
+
+        st.info("No hay créditos.")
+
     else:
-        df["estado_real"] = df.apply(estado_real, axis=1)
-        df["fecha_dt"] = pd.to_datetime(df["fecha"])
 
-        df_pendientes = df[df["estado"] != "Pagado"].copy()
+        df["estado_real"] = df.apply(
+            estado_real,
+            axis=1
+        )
 
-        if df_pendientes.empty:
-            st.info("No hay créditos pendientes por pagar.")
+        pendientes = df[
+            df["estado"] != "Pagado"
+        ].copy()
+
+        if pendientes.empty:
+
+            st.info("No hay pendientes.")
+
         else:
-            col1, col2, col3 = st.columns(3)
 
-            with col1:
-                filtro_sede_pago = st.selectbox(
-                    "Filtrar sede",
-                    ["Todas"] + SEDES,
-                    key="filtro_sede_pago"
-                )
-
-            with col2:
-                filtro_adicional_pago = st.selectbox(
-                    "Filtrar adicional",
-                    ["Todos", "Sí", "No"],
-                    key="filtro_adicional_pago"
-                )
-
-            with col3:
-                filtro_mes_pago = st.selectbox(
-                    "Filtrar mes",
-                    list(MESES.keys()),
-                    key="filtro_mes_pago"
-                )
-
-            df_pago = df_pendientes.copy()
-
-            if filtro_sede_pago != "Todas":
-                df_pago = df_pago[df_pago["sede"] == filtro_sede_pago]
-
-            if filtro_adicional_pago != "Todos":
-                df_pago = df_pago[df_pago["adicional"] == filtro_adicional_pago]
-
-            if filtro_mes_pago != "Todos":
-                df_pago = df_pago[
-                    df_pago["fecha_dt"].dt.month == MESES[filtro_mes_pago]
+            tabla = pendientes[
+                [
+                    "id",
+                    "concepto",
+                    "fecha",
+                    "sede",
+                    "total",
+                    "vencimiento"
                 ]
+            ]
 
-            if df_pago.empty:
-                st.warning("No hay créditos pendientes con esos filtros.")
-            else:
-                st.caption("Marca todos los créditos que fueron pagados con el depósito.")
+            tabla.insert(0, "Pagar", False)
 
-                tabla_pago = df_pago[
-                    [
-                        "id",
-                        "concepto",
-                        "fecha",
-                        "sede",
-                        "total",
-                        "estado_real",
-                        "vencimiento",
-                        "adicional"
-                    ]
-                ].rename(columns={
-                    "id": "ID",
-                    "concepto": "OC",
-                    "fecha": "Fecha",
-                    "sede": "Sede",
-                    "total": "Total S/",
-                    "estado_real": "Estado",
-                    "vencimiento": "Vencimiento",
-                    "adicional": "Adicional"
-                })
+            tabla_editada = st.data_editor(
+                tabla,
+                use_container_width=True,
+                hide_index=True,
+                disabled=[
+                    "id",
+                    "concepto",
+                    "fecha",
+                    "sede",
+                    "total",
+                    "vencimiento"
+                ]
+            )
 
-                tabla_pago.insert(0, "Pagar", False)
+            seleccionados = tabla_editada[
+                tabla_editada["Pagar"] == True
+            ]
 
-                tabla_editada = st.data_editor(
-                    tabla_pago,
-                    use_container_width=True,
-                    hide_index=True,
-                    disabled=[
-                        "ID",
-                        "OC",
-                        "Fecha",
-                        "Sede",
-                        "Total S/",
-                        "Estado",
-                        "Vencimiento",
-                        "Adicional"
-                    ],
-                    column_config={
-                        "Pagar": st.column_config.CheckboxColumn(
-                            "Pagar",
-                            help="Marca los créditos incluidos en el depósito"
+            monto = seleccionados["total"].sum()
+
+            st.metric(
+                "Monto seleccionado",
+                f"S/ {monto:,.2f}"
+            )
+
+            with st.form("form_pago"):
+
+                fecha_pago = st.date_input(
+                    "Fecha de pago",
+                    value=date.today()
+                )
+
+                voucher = st.file_uploader(
+                    "Voucher",
+                    type=["png", "jpg", "jpeg", "pdf"]
+                )
+
+                observacion = st.text_area(
+                    "Observación"
+                )
+
+                registrar = st.form_submit_button(
+                    "Registrar pago"
+                )
+
+                if registrar:
+
+                    if seleccionados.empty:
+                        st.error(
+                            "Selecciona créditos."
                         )
-                    }
-                )
 
-                seleccionados = tabla_editada[tabla_editada["Pagar"] == True]
+                    elif voucher is None:
+                        st.error(
+                            "Sube voucher."
+                        )
 
-                monto_seleccionado = seleccionados["Total S/"].sum()
+                    else:
 
-                st.metric(
-                    "Monto seleccionado para pagar",
-                    f"S/ {monto_seleccionado:,.2f}"
-                )
+                        voucher_url = subir_archivo(
+                            voucher,
+                            "vouchers"
+                        )
 
-                with st.form("form_pago_multiple"):
-                    fecha_pago = st.date_input("Fecha de pago", value=date.today())
+                        pago = supabase.table(
+                            "pagos"
+                        ).insert({
 
-                    voucher = st.file_uploader(
-                        "Subir voucher del depósito",
-                        type=["png", "jpg", "jpeg", "pdf"]
-                    )
+                            "fecha_pago": str(fecha_pago),
+                            "monto_total": float(monto),
+                            "voucher": voucher_url,
+                            "observacion": observacion
 
-                    observacion = st.text_area(
-                        "Observación",
-                        placeholder="Ejemplo: Depósito Vital, operación 123456"
-                    )
+                        }).execute()
 
-                    registrar_pago = st.form_submit_button("Registrar pago")
+                        pago_id = pago.data[0]["id"]
 
-                    if registrar_pago:
-                        if seleccionados.empty:
-                            st.error("Debes marcar al menos un crédito.")
-                        elif voucher is None:
-                            st.error("Debes subir el voucher del depósito.")
-                        else:
-                            voucher_url = subir_archivo(voucher, "vouchers")
+                        ids = seleccionados[
+                            "id"
+                        ].astype(int).tolist()
 
-                            pago_insert = supabase.table("pagos").insert({
-                                "fecha_pago": str(fecha_pago),
-                                "monto_total": float(monto_seleccionado),
-                                "voucher": voucher_url,
-                                "observacion": observacion
-                            }).execute()
+                        for credito_id in ids:
 
-                            pago_id = pago_insert.data[0]["id"]
+                            supabase.table(
+                                "creditos"
+                            ).update({
 
-                            ids_pagados = seleccionados["ID"].astype(int).tolist()
+                                "estado": "Pagado",
+                                "pago_id": pago_id
 
-                            for credito_id in ids_pagados:
-                                supabase.table("creditos").update({
-                                    "estado": "Pagado",
-                                    "pago_id": int(pago_id)
-                                }).eq("id", int(credito_id)).execute()
+                            }).eq(
+                                "id",
+                                credito_id
+                            ).execute()
 
-                            st.session_state["pago_exitoso"] = (
-                                f"Pago registrado correctamente. "
-                                f"Créditos pagados: {len(ids_pagados)}. "
-                                f"Monto: S/ {monto_seleccionado:,.2f}"
-                            )
-                            st.rerun()
+                        st.success(
+                            "Pago registrado correctamente."
+                        )
 
+                        st.rerun()
 
 # =========================
-# MODIFICAR CRÉDITO
+# MODIFICAR
 # =========================
 
 if menu == "Modificar crédito":
+
     st.subheader("Modificar crédito")
 
     df = cargar_creditos()
 
     if df.empty:
-        st.info("No hay créditos registrados.")
+
+        st.info("No hay créditos.")
+
     else:
+
         credito_id = st.selectbox(
             "Selecciona crédito",
-            df["id"].tolist(),
-            format_func=lambda x: (
-                f"OC {df[df['id'] == x]['concepto'].values[0]} - "
-                f"{df[df['id'] == x]['sede'].values[0]}"
-            )
+            df["id"].tolist()
         )
 
-        credito = df[df["id"] == credito_id].iloc[0]
+        credito = df[
+            df["id"] == credito_id
+        ].iloc[0]
 
         with st.form("form_modificar"):
-            col1, col2, col3 = st.columns(3)
 
-            with col1:
-                nuevo_concepto = st.text_input(
-                    "N° Orden de compra",
-                    value=credito["concepto"]
+            nuevo_estado = st.selectbox(
+                "Estado",
+                ESTADOS,
+                index=ESTADOS.index(
+                    credito["estado"]
                 )
+            )
 
-                nueva_fecha = st.date_input(
-                    "Fecha",
-                    value=pd.to_datetime(credito["fecha"]).date()
-                )
-
-            with col2:
-                nueva_sede = st.selectbox(
-                    "Sede",
-                    SEDES,
-                    index=SEDES.index(credito["sede"])
-                )
-
-                nuevo_total = st.number_input(
-                    "Total S/",
-                    min_value=0.0,
-                    value=float(credito["total"]),
-                    step=0.10,
-                    format="%.2f"
-                )
-
-                nuevos_dias = st.number_input(
-                    "Días de crédito",
-                    min_value=1,
-                    max_value=60,
-                    value=int(credito["dias_credito"])
-                )
-
-            with col3:
-                nuevo_estado = st.selectbox(
-                    "Estado",
-                    ESTADOS,
-                    index=ESTADOS.index(credito["estado"])
-                )
-
-                nuevo_adicional = st.checkbox(
-                    "¿Pedido adicional?",
-                    value=credito["adicional"] == "Sí"
-                )
-
-                nueva_imagen = st.file_uploader(
-                    "Cambiar orden de compra",
-                    type=["png", "jpg", "jpeg", "pdf"]
-                )
-
-            guardar = st.form_submit_button("Guardar cambios")
+            guardar = st.form_submit_button(
+                "Guardar cambios"
+            )
 
             if guardar:
-                if nuevo_concepto.strip() == "":
-                    st.error("La OC no puede estar vacía.")
-                elif nuevo_total <= 0:
-                    st.error("El total debe ser mayor a 0.")
-                else:
-                    nueva_imagen_url = credito.get("imagen")
 
-                    if nueva_imagen is not None:
-                        nueva_imagen_url = subir_archivo(nueva_imagen, "ordenes")
+                supabase.table(
+                    "creditos"
+                ).update({
 
-                    nuevo_vencimiento = nueva_fecha + timedelta(days=int(nuevos_dias))
+                    "estado": nuevo_estado
 
-                    supabase.table("creditos").update({
-                        "concepto": nuevo_concepto,
-                        "fecha": str(nueva_fecha),
-                        "sede": nueva_sede,
-                        "total": float(nuevo_total),
-                        "estado": nuevo_estado,
-                        "dias_credito": int(nuevos_dias),
-                        "vencimiento": str(nuevo_vencimiento),
-                        "imagen": nueva_imagen_url,
-                        "adicional": "Sí" if nuevo_adicional else "No"
-                    }).eq("id", int(credito_id)).execute()
+                }).eq(
+                    "id",
+                    credito_id
+                ).execute()
 
-                    st.success("Crédito actualizado correctamente.")
-                    st.rerun()
+                st.success(
+                    "Crédito actualizado."
+                )
 
+                st.rerun()
 
 # =========================
-# ELIMINAR CRÉDITO
+# ELIMINAR
 # =========================
 
 if menu == "Eliminar crédito":
+
     st.subheader("Eliminar crédito")
 
     df = cargar_creditos()
 
     if df.empty:
-        st.info("No hay créditos registrados.")
+
+        st.info("No hay créditos.")
+
     else:
+
         credito_id = st.selectbox(
             "Selecciona crédito",
-            df["id"].tolist(),
-            format_func=lambda x: (
-                f"OC {df[df['id'] == x]['concepto'].values[0]} - "
-                f"{df[df['id'] == x]['sede'].values[0]}"
-            )
+            df["id"].tolist()
         )
 
-        credito = df[df["id"] == credito_id].iloc[0]
-
-        st.warning("Esta acción eliminará el crédito definitivamente.")
-
-        st.write(f"**OC:** {credito['concepto']}")
-        st.write(f"**Fecha:** {credito['fecha']}")
-        st.write(f"**Sede:** {credito['sede']}")
-        st.write(f"**Total:** S/ {credito['total']:,.2f}")
-        st.write(f"**Estado:** {credito['estado']}")
-
-        confirmar = st.checkbox("Confirmo que quiero eliminar este crédito")
+        confirmar = st.checkbox(
+            "Confirmar eliminación"
+        )
 
         if st.button("Eliminar crédito"):
+
             if confirmar:
-                supabase.table("creditos").delete().eq(
+
+                supabase.table(
+                    "creditos"
+                ).delete().eq(
                     "id",
-                    int(credito_id)
+                    credito_id
                 ).execute()
 
-                st.success("Crédito eliminado correctamente.")
+                st.success(
+                    "Crédito eliminado."
+                )
+
                 st.rerun()
+
             else:
-                st.error("Debes confirmar antes de eliminar.")
+
+                st.error(
+                    "Debes confirmar."
+                )
