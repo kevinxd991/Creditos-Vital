@@ -15,6 +15,10 @@ DB = "creditos.db"
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+SEDES = ["Callao", "Villa el Salvador", "Punta Negra", "Ferrosal"]
+ESTADOS = ["Pendiente", "Pago parcial", "Pagado"]
+
+
 conn = sqlite3.connect(DB, check_same_thread=False)
 cursor = conn.cursor()
 
@@ -42,12 +46,26 @@ def cargar_creditos():
     )
 
 
+def estado_real(row):
+    hoy = date.today()
+
+    try:
+        vencimiento = pd.to_datetime(row["vencimiento"]).date()
+    except Exception:
+        return row["estado"]
+
+    if row["estado"] != "Pagado" and vencimiento < hoy:
+        return "Vencido"
+
+    return row["estado"]
+
+
 st.title("💰 Sistema de Control de Créditos")
 st.caption("Registro de créditos, órdenes de compra y control de vencimientos")
 
 menu = st.sidebar.radio(
     "Menú",
-    ["Registrar crédito", "Ver créditos"]
+    ["Registrar crédito", "Ver créditos", "Modificar crédito"]
 )
 
 if menu == "Registrar crédito":
@@ -76,9 +94,9 @@ if menu == "Registrar crédito":
             )
 
         with col2:
-            sede = st.text_input(
+            sede = st.selectbox(
                 "Sede",
-                placeholder="Ferrosal"
+                SEDES
             )
 
             total = st.number_input(
@@ -98,7 +116,7 @@ if menu == "Registrar crédito":
         with col3:
             estado = st.selectbox(
                 "Estado",
-                ["Pendiente", "Pagado", "Pago parcial"]
+                ESTADOS
             )
 
             imagen = st.file_uploader(
@@ -111,8 +129,6 @@ if menu == "Registrar crédito":
         if guardar:
             if concepto.strip() == "":
                 st.error("Debes ingresar el número de orden de compra.")
-            elif sede.strip() == "":
-                st.error("Debes ingresar la sede.")
             elif total <= 0:
                 st.error("El total debe ser mayor a 0.")
             else:
@@ -155,6 +171,8 @@ if menu == "Registrar crédito":
 
                 conn.commit()
                 st.success("Crédito registrado correctamente.")
+                st.rerun()
+
 
 if menu == "Ver créditos":
     st.subheader("Créditos registrados")
@@ -164,17 +182,7 @@ if menu == "Ver créditos":
     if df.empty:
         st.info("Todavía no tienes créditos registrados.")
     else:
-        hoy = date.today()
-
-        df["fecha"] = pd.to_datetime(df["fecha"]).dt.date
-        df["vencimiento"] = pd.to_datetime(df["vencimiento"]).dt.date
-
-        df["estado_real"] = df.apply(
-            lambda row: "Vencido"
-            if row["estado"] != "Pagado" and row["vencimiento"] < hoy
-            else row["estado"],
-            axis=1
-        )
+        df["estado_real"] = df.apply(estado_real, axis=1)
 
         total_general = df["total"].sum()
         total_pendiente = df[df["estado_real"] != "Pagado"]["total"].sum()
@@ -195,7 +203,7 @@ if menu == "Ver créditos":
         with colf1:
             filtro_sede = st.selectbox(
                 "Filtrar por sede",
-                ["Todas"] + sorted(df["sede"].dropna().unique().tolist())
+                ["Todas"] + SEDES
             )
 
         with colf2:
@@ -231,22 +239,196 @@ if menu == "Ver créditos":
 
         st.divider()
 
-        st.subheader("Ver orden de compra")
+        if not df_filtrado.empty:
+            st.subheader("Ver orden de compra")
+
+            credito_id = st.selectbox(
+                "Selecciona un crédito",
+                df_filtrado["id"].tolist(),
+                format_func=lambda x: f"OC {df[df['id'] == x]['concepto'].values[0]} - {df[df['id'] == x]['sede'].values[0]}"
+            )
+
+            credito = df[df["id"] == credito_id].iloc[0]
+
+            col_a, col_b = st.columns([1, 2])
+
+            with col_a:
+                st.write(f"**OC:** {credito['concepto']}")
+                st.write(f"**Mes:** {credito['mes']}")
+                st.write(f"**Fecha:** {credito['fecha']}")
+                st.write(f"**Sede:** {credito['sede']}")
+                st.write(f"**Total:** S/ {credito['total']:,.2f}")
+                st.write(f"**Estado:** {credito['estado_real']}")
+                st.write(f"**Vencimiento:** {credito['vencimiento']}")
+
+            with col_b:
+                if credito["imagen"]:
+                    st.image(
+                        credito["imagen"],
+                        caption="Orden de compra",
+                        use_container_width=True
+                    )
+                else:
+                    st.warning("Este crédito no tiene imagen de orden de compra.")
+        else:
+            st.warning("No hay créditos con esos filtros.")
+
+
+if menu == "Modificar crédito":
+    st.subheader("Modificar crédito")
+
+    df = cargar_creditos()
+
+    if df.empty:
+        st.info("No hay créditos registrados.")
+    else:
+        df["estado_real"] = df.apply(estado_real, axis=1)
 
         credito_id = st.selectbox(
-            "Selecciona un crédito",
-            df_filtrado["id"].tolist(),
+            "Selecciona el crédito a modificar",
+            df["id"].tolist(),
             format_func=lambda x: f"OC {df[df['id'] == x]['concepto'].values[0]} - {df[df['id'] == x]['sede'].values[0]}"
         )
 
         credito = df[df["id"] == credito_id].iloc[0]
 
+        st.info(
+            f"Editando OC {credito['concepto']} | "
+            f"Sede: {credito['sede']} | "
+            f"Total: S/ {credito['total']:,.2f} | "
+            f"Estado actual: {credito['estado_real']}"
+        )
+
+        with st.form("form_modificar"):
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                nuevo_mes = st.selectbox(
+                    "Mes",
+                    [
+                        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+                    ],
+                    index=[
+                        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+                    ].index(credito["mes"])
+                    if credito["mes"] in [
+                        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+                    ] else 0
+                )
+
+                nuevo_concepto = st.text_input(
+                    "Concepto / N° OC",
+                    value=str(credito["concepto"])
+                )
+
+                nueva_fecha = st.date_input(
+                    "Fecha de emisión",
+                    value=pd.to_datetime(credito["fecha"]).date()
+                )
+
+            with col2:
+                nueva_sede = st.selectbox(
+                    "Sede",
+                    SEDES,
+                    index=SEDES.index(credito["sede"]) if credito["sede"] in SEDES else 0
+                )
+
+                nuevo_total = st.number_input(
+                    "Total S/",
+                    min_value=0.0,
+                    value=float(credito["total"]),
+                    step=0.10,
+                    format="%.2f"
+                )
+
+                nuevos_dias_credito = st.number_input(
+                    "Días de crédito",
+                    min_value=1,
+                    max_value=60,
+                    value=int(credito["dias_credito"])
+                )
+
+            with col3:
+                nuevo_estado = st.selectbox(
+                    "Estado",
+                    ESTADOS,
+                    index=ESTADOS.index(credito["estado"]) if credito["estado"] in ESTADOS else 0
+                )
+
+                nueva_imagen = st.file_uploader(
+                    "Cambiar imagen de OC",
+                    type=["png", "jpg", "jpeg"]
+                )
+
+                mantener_imagen = st.checkbox(
+                    "Mantener imagen actual",
+                    value=True
+                )
+
+            guardar_cambios = st.form_submit_button("Guardar cambios")
+
+            if guardar_cambios:
+                if nuevo_concepto.strip() == "":
+                    st.error("El número de OC no puede estar vacío.")
+                elif nuevo_total <= 0:
+                    st.error("El total debe ser mayor a 0.")
+                else:
+                    ruta_imagen = credito["imagen"]
+
+                    if nueva_imagen is not None:
+                        extension = nueva_imagen.name.split(".")[-1]
+                        nombre_archivo = f"{uuid.uuid4()}.{extension}"
+                        ruta_imagen = str(UPLOAD_DIR / nombre_archivo)
+
+                        with open(ruta_imagen, "wb") as f:
+                            f.write(nueva_imagen.getbuffer())
+
+                    if not mantener_imagen and nueva_imagen is None:
+                        ruta_imagen = ""
+
+                    nuevo_vencimiento = nueva_fecha + timedelta(days=int(nuevos_dias_credito))
+
+                    cursor.execute("""
+                        UPDATE creditos
+                        SET
+                            mes = ?,
+                            concepto = ?,
+                            fecha = ?,
+                            sede = ?,
+                            total = ?,
+                            estado = ?,
+                            dias_credito = ?,
+                            vencimiento = ?,
+                            imagen = ?
+                        WHERE id = ?
+                    """, (
+                        nuevo_mes,
+                        nuevo_concepto,
+                        str(nueva_fecha),
+                        nueva_sede,
+                        float(nuevo_total),
+                        nuevo_estado,
+                        int(nuevos_dias_credito),
+                        str(nuevo_vencimiento),
+                        ruta_imagen,
+                        int(credito_id)
+                    ))
+
+                    conn.commit()
+                    st.success("Crédito actualizado correctamente.")
+                    st.rerun()
+
+        st.divider()
+
+        st.subheader("Vista actual de la orden")
+
         col_a, col_b = st.columns([1, 2])
 
         with col_a:
             st.write(f"**OC:** {credito['concepto']}")
-            st.write(f"**Mes:** {credito['mes']}")
-            st.write(f"**Fecha:** {credito['fecha']}")
             st.write(f"**Sede:** {credito['sede']}")
             st.write(f"**Total:** S/ {credito['total']:,.2f}")
             st.write(f"**Estado:** {credito['estado_real']}")
@@ -256,8 +438,8 @@ if menu == "Ver créditos":
             if credito["imagen"]:
                 st.image(
                     credito["imagen"],
-                    caption="Orden de compra",
+                    caption="Orden de compra actual",
                     use_container_width=True
                 )
             else:
-                st.warning("Este crédito no tiene imagen de orden de compra.")
+                st.warning("Este crédito no tiene imagen registrada.")
