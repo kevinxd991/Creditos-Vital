@@ -17,7 +17,10 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 SEDES = ["Callao", "Villa el Salvador", "Punta Negra", "Ferrosal"]
 ESTADOS = ["Pendiente", "Pago parcial", "Pagado"]
-
+MESES = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+]
 
 conn = sqlite3.connect(DB, check_same_thread=False)
 cursor = conn.cursor()
@@ -60,12 +63,31 @@ def estado_real(row):
     return row["estado"]
 
 
+def guardar_imagen(imagen):
+    if imagen is None:
+        return ""
+
+    extension = imagen.name.split(".")[-1]
+    nombre_archivo = f"{uuid.uuid4()}.{extension}"
+    ruta_imagen = str(UPLOAD_DIR / nombre_archivo)
+
+    with open(ruta_imagen, "wb") as f:
+        f.write(imagen.getbuffer())
+
+    return ruta_imagen
+
+
 st.title("💰 Sistema de Control de Créditos")
 st.caption("Registro de créditos, órdenes de compra y control de vencimientos")
 
 menu = st.sidebar.radio(
     "Menú",
-    ["Registrar crédito", "Ver créditos", "Modificar crédito"]
+    [
+        "Registrar crédito",
+        "Ver créditos",
+        "Modificar crédito",
+        "Eliminar crédito"
+    ]
 )
 
 if menu == "Registrar crédito":
@@ -75,13 +97,7 @@ if menu == "Registrar crédito":
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            mes = st.selectbox(
-                "Mes",
-                [
-                    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-                    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-                ]
-            )
+            mes = st.selectbox("Mes", MESES)
 
             concepto = st.text_input(
                 "Concepto / N° Orden de Compra",
@@ -94,10 +110,7 @@ if menu == "Registrar crédito":
             )
 
         with col2:
-            sede = st.selectbox(
-                "Sede",
-                SEDES
-            )
+            sede = st.selectbox("Sede", SEDES)
 
             total = st.number_input(
                 "Total S/",
@@ -114,10 +127,7 @@ if menu == "Registrar crédito":
             )
 
         with col3:
-            estado = st.selectbox(
-                "Estado",
-                ESTADOS
-            )
+            estado = st.selectbox("Estado", ESTADOS)
 
             imagen = st.file_uploader(
                 "Subir orden de compra",
@@ -132,16 +142,7 @@ if menu == "Registrar crédito":
             elif total <= 0:
                 st.error("El total debe ser mayor a 0.")
             else:
-                ruta_imagen = ""
-
-                if imagen is not None:
-                    extension = imagen.name.split(".")[-1]
-                    nombre_archivo = f"{uuid.uuid4()}.{extension}"
-                    ruta_imagen = str(UPLOAD_DIR / nombre_archivo)
-
-                    with open(ruta_imagen, "wb") as f:
-                        f.write(imagen.getbuffer())
-
+                ruta_imagen = guardar_imagen(imagen)
                 vencimiento = fecha + timedelta(days=int(dias_credito))
 
                 cursor.execute("""
@@ -198,19 +199,19 @@ if menu == "Ver créditos":
 
         st.divider()
 
-        colf1, colf2 = st.columns(2)
+        colf1, colf2, colf3 = st.columns(3)
 
         with colf1:
-            filtro_sede = st.selectbox(
-                "Filtrar por sede",
-                ["Todas"] + SEDES
-            )
+            filtro_sede = st.selectbox("Filtrar por sede", ["Todas"] + SEDES)
 
         with colf2:
             filtro_estado = st.selectbox(
                 "Filtrar por estado",
                 ["Todos", "Pendiente", "Pago parcial", "Pagado", "Vencido"]
             )
+
+        with colf3:
+            filtro_mes = st.selectbox("Filtrar por mes", ["Todos"] + MESES)
 
         df_filtrado = df.copy()
 
@@ -219,6 +220,9 @@ if menu == "Ver créditos":
 
         if filtro_estado != "Todos":
             df_filtrado = df_filtrado[df_filtrado["estado_real"] == filtro_estado]
+
+        if filtro_mes != "Todos":
+            df_filtrado = df_filtrado[df_filtrado["mes"] == filtro_mes]
 
         st.dataframe(
             df_filtrado[
@@ -245,7 +249,10 @@ if menu == "Ver créditos":
             credito_id = st.selectbox(
                 "Selecciona un crédito",
                 df_filtrado["id"].tolist(),
-                format_func=lambda x: f"OC {df[df['id'] == x]['concepto'].values[0]} - {df[df['id'] == x]['sede'].values[0]}"
+                format_func=lambda x: (
+                    f"OC {df[df['id'] == x]['concepto'].values[0]} - "
+                    f"{df[df['id'] == x]['sede'].values[0]}"
+                )
             )
 
             credito = df[df["id"] == credito_id].iloc[0]
@@ -287,7 +294,10 @@ if menu == "Modificar crédito":
         credito_id = st.selectbox(
             "Selecciona el crédito a modificar",
             df["id"].tolist(),
-            format_func=lambda x: f"OC {df[df['id'] == x]['concepto'].values[0]} - {df[df['id'] == x]['sede'].values[0]}"
+            format_func=lambda x: (
+                f"OC {df[df['id'] == x]['concepto'].values[0]} - "
+                f"{df[df['id'] == x]['sede'].values[0]}"
+            )
         )
 
         credito = df[df["id"] == credito_id].iloc[0]
@@ -305,18 +315,8 @@ if menu == "Modificar crédito":
             with col1:
                 nuevo_mes = st.selectbox(
                     "Mes",
-                    [
-                        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-                        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-                    ],
-                    index=[
-                        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-                        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-                    ].index(credito["mes"])
-                    if credito["mes"] in [
-                        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-                        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-                    ] else 0
+                    MESES,
+                    index=MESES.index(credito["mes"]) if credito["mes"] in MESES else 0
                 )
 
                 nuevo_concepto = st.text_input(
@@ -379,17 +379,14 @@ if menu == "Modificar crédito":
                     ruta_imagen = credito["imagen"]
 
                     if nueva_imagen is not None:
-                        extension = nueva_imagen.name.split(".")[-1]
-                        nombre_archivo = f"{uuid.uuid4()}.{extension}"
-                        ruta_imagen = str(UPLOAD_DIR / nombre_archivo)
-
-                        with open(ruta_imagen, "wb") as f:
-                            f.write(nueva_imagen.getbuffer())
+                        ruta_imagen = guardar_imagen(nueva_imagen)
 
                     if not mantener_imagen and nueva_imagen is None:
                         ruta_imagen = ""
 
-                    nuevo_vencimiento = nueva_fecha + timedelta(days=int(nuevos_dias_credito))
+                    nuevo_vencimiento = nueva_fecha + timedelta(
+                        days=int(nuevos_dias_credito)
+                    )
 
                     cursor.execute("""
                         UPDATE creditos
@@ -443,3 +440,64 @@ if menu == "Modificar crédito":
                 )
             else:
                 st.warning("Este crédito no tiene imagen registrada.")
+
+
+if menu == "Eliminar crédito":
+    st.subheader("Eliminar crédito")
+
+    df = cargar_creditos()
+
+    if df.empty:
+        st.info("No hay créditos registrados.")
+    else:
+        df["estado_real"] = df.apply(estado_real, axis=1)
+
+        credito_id = st.selectbox(
+            "Selecciona el crédito a eliminar",
+            df["id"].tolist(),
+            format_func=lambda x: (
+                f"OC {df[df['id'] == x]['concepto'].values[0]} - "
+                f"{df[df['id'] == x]['sede'].values[0]}"
+            )
+        )
+
+        credito = df[df["id"] == credito_id].iloc[0]
+
+        st.warning("Esta acción eliminará el crédito definitivamente.")
+
+        col1, col2 = st.columns([1, 2])
+
+        with col1:
+            st.write(f"**OC:** {credito['concepto']}")
+            st.write(f"**Mes:** {credito['mes']}")
+            st.write(f"**Fecha:** {credito['fecha']}")
+            st.write(f"**Sede:** {credito['sede']}")
+            st.write(f"**Total:** S/ {credito['total']:,.2f}")
+            st.write(f"**Estado:** {credito['estado_real']}")
+            st.write(f"**Vencimiento:** {credito['vencimiento']}")
+
+        with col2:
+            if credito["imagen"]:
+                st.image(
+                    credito["imagen"],
+                    caption="Orden de compra",
+                    use_container_width=True
+                )
+            else:
+                st.info("Este crédito no tiene imagen registrada.")
+
+        confirmar = st.checkbox(
+            "Confirmo que quiero eliminar este crédito"
+        )
+
+        if st.button("Eliminar crédito"):
+            if confirmar:
+                cursor.execute(
+                    "DELETE FROM creditos WHERE id = ?",
+                    (int(credito_id),)
+                )
+                conn.commit()
+                st.success("Crédito eliminado correctamente.")
+                st.rerun()
+            else:
+                st.error("Primero debes marcar la confirmación.")
