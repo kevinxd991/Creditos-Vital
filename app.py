@@ -2,10 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 from supabase import create_client
+import uuid
 
-# ======================================
+# =====================================
 # CONFIG
-# ======================================
+# =====================================
 
 st.set_page_config(
     page_title="VITAL CREDIT",
@@ -34,9 +35,9 @@ ESTADOS = [
     "Pagado"
 ]
 
-# ======================================
+# =====================================
 # FUNCIONES
-# ======================================
+# =====================================
 
 def cargar_creditos():
 
@@ -75,9 +76,35 @@ def estado_real(row):
 
     return row["estado"]
 
-# ======================================
+
+def subir_imagen(imagen):
+
+    if imagen is None:
+        return None
+
+    extension = imagen.name.split(".")[-1]
+
+    nombre = f"{uuid.uuid4()}.{extension}"
+
+    contenido = imagen.getvalue()
+
+    supabase.storage.from_(
+        "ordenes"
+    ).upload(
+        nombre,
+        contenido,
+        {"content-type": imagen.type}
+    )
+
+    url = supabase.storage.from_(
+        "ordenes"
+    ).get_public_url(nombre)
+
+    return url
+
+# =====================================
 # TITULO
-# ======================================
+# =====================================
 
 st.title("💰 VITAL CREDIT")
 
@@ -91,9 +118,9 @@ menu = st.sidebar.radio(
     ]
 )
 
-# ======================================
+# =====================================
 # REGISTRAR
-# ======================================
+# =====================================
 
 if menu == "Registrar crédito":
 
@@ -147,6 +174,11 @@ if menu == "Registrar crédito":
                 "¿Pedido adicional?"
             )
 
+            imagen = st.file_uploader(
+                "Orden de compra",
+                type=["png", "jpg", "jpeg"]
+            )
+
         guardar = st.form_submit_button(
             "Guardar crédito"
         )
@@ -154,14 +186,10 @@ if menu == "Registrar crédito":
         if guardar:
 
             if concepto.strip() == "":
-                st.error(
-                    "Debes ingresar la OC."
-                )
+                st.error("Debes ingresar la OC.")
 
             elif total <= 0:
-                st.error(
-                    "El total debe ser mayor a 0."
-                )
+                st.error("El total debe ser mayor a 0.")
 
             else:
 
@@ -170,6 +198,10 @@ if menu == "Registrar crédito":
                     timedelta(
                         days=int(dias_credito)
                     )
+                )
+
+                imagen_url = subir_imagen(
+                    imagen
                 )
 
                 supabase.table(
@@ -188,19 +220,20 @@ if menu == "Registrar crédito":
                         vencimiento
                     ),
                     "adicional":
-                    "Sí" if adicional else "No"
+                    "Sí" if adicional else "No",
+                    "imagen": imagen_url
 
                 }).execute()
 
                 st.success(
-                    "Crédito registrado correctamente."
+                    "Crédito registrado."
                 )
 
                 st.rerun()
 
-# ======================================
-# VER CREDITOS
-# ======================================
+# =====================================
+# VER
+# =====================================
 
 if menu == "Ver créditos":
 
@@ -211,7 +244,7 @@ if menu == "Ver créditos":
     if df.empty:
 
         st.info(
-            "No hay créditos registrados."
+            "No hay créditos."
         )
 
     else:
@@ -264,46 +297,8 @@ if menu == "Ver créditos":
 
         st.divider()
 
-        colf1, colf2 = st.columns(2)
-
-        with colf1:
-
-            filtro_sede = st.selectbox(
-                "Filtrar sede",
-                ["Todas"] + SEDES
-            )
-
-        with colf2:
-
-            filtro_estado = st.selectbox(
-                "Filtrar estado",
-                [
-                    "Todos",
-                    "Pendiente",
-                    "Pago parcial",
-                    "Pagado",
-                    "Vencido"
-                ]
-            )
-
-        df_filtrado = df.copy()
-
-        if filtro_sede != "Todas":
-
-            df_filtrado = df_filtrado[
-                df_filtrado["sede"]
-                == filtro_sede
-            ]
-
-        if filtro_estado != "Todos":
-
-            df_filtrado = df_filtrado[
-                df_filtrado["estado_real"]
-                == filtro_estado
-            ]
-
         st.dataframe(
-            df_filtrado[
+            df[
                 [
                     "id",
                     "concepto",
@@ -318,13 +313,43 @@ if menu == "Ver créditos":
             use_container_width=True
         )
 
-# ======================================
+        st.divider()
+
+        credito_id = st.selectbox(
+            "Selecciona crédito",
+            df["id"].tolist(),
+            format_func=lambda x:
+            (
+                f"OC "
+                f"{df[df['id']==x]['concepto'].values[0]}"
+            )
+        )
+
+        credito = df[
+            df["id"] == credito_id
+        ].iloc[0]
+
+        st.write(
+            f"### OC {credito['concepto']}"
+        )
+
+        st.write(
+            f"Estado: "
+            f"{credito['estado_real']}"
+        )
+
+        if credito["imagen"]:
+
+            st.link_button(
+                "Descargar orden de compra",
+                credito["imagen"]
+            )
+
+# =====================================
 # MODIFICAR
-# ======================================
+# =====================================
 
 if menu == "Modificar crédito":
-
-    st.subheader("Modificar crédito")
 
     df = cargar_creditos()
 
@@ -337,8 +362,6 @@ if menu == "Modificar crédito":
             (
                 f"OC "
                 f"{df[df['id']==x]['concepto'].values[0]}"
-                f" - "
-                f"{df[df['id']==x]['sede'].values[0]}"
             )
         )
 
@@ -346,46 +369,23 @@ if menu == "Modificar crédito":
             df["id"] == credito_id
         ].iloc[0]
 
-        with st.form("editar_credito"):
+        with st.form("editar"):
 
-            col1, col2 = st.columns(2)
-
-            with col1:
-
-                nuevo_estado = st.selectbox(
-                    "Estado",
-                    ESTADOS,
-                    index=ESTADOS.index(
-                        credito["estado"]
-                    )
+            nuevo_estado = st.selectbox(
+                "Estado",
+                ESTADOS,
+                index=ESTADOS.index(
+                    credito["estado"]
                 )
+            )
 
-                nueva_sede = st.selectbox(
-                    "Sede",
-                    SEDES,
-                    index=SEDES.index(
-                        credito["sede"]
-                    )
-                )
-
-            with col2:
-
-                nuevo_total = st.number_input(
-                    "Total",
-                    min_value=0.0,
-                    value=float(
-                        credito["total"]
-                    ),
-                    step=0.10
-                )
-
-                nuevo_adicional = st.checkbox(
-                    "¿Pedido adicional?",
-                    value=(
-                        credito["adicional"]
-                        == "Sí"
-                    )
-                )
+            nuevo_total = st.number_input(
+                "Total",
+                value=float(
+                    credito["total"]
+                ),
+                step=0.10
+            )
 
             guardar = st.form_submit_button(
                 "Guardar cambios"
@@ -400,15 +400,8 @@ if menu == "Modificar crédito":
                     "estado":
                     nuevo_estado,
 
-                    "sede":
-                    nueva_sede,
-
                     "total":
-                    float(nuevo_total),
-
-                    "adicional":
-                    "Sí" if nuevo_adicional
-                    else "No"
+                    float(nuevo_total)
 
                 }).eq(
                     "id",
@@ -421,13 +414,11 @@ if menu == "Modificar crédito":
 
                 st.rerun()
 
-# ======================================
+# =====================================
 # ELIMINAR
-# ======================================
+# =====================================
 
 if menu == "Eliminar crédito":
-
-    st.subheader("Eliminar crédito")
 
     df = cargar_creditos()
 
@@ -440,29 +431,7 @@ if menu == "Eliminar crédito":
             (
                 f"OC "
                 f"{df[df['id']==x]['concepto'].values[0]}"
-                f" - "
-                f"{df[df['id']==x]['sede'].values[0]}"
             )
-        )
-
-        credito = df[
-            df["id"] == credito_id
-        ].iloc[0]
-
-        st.warning(
-            "Esta acción eliminará el crédito."
-        )
-
-        st.write(
-            f"OC: {credito['concepto']}"
-        )
-
-        st.write(
-            f"Sede: {credito['sede']}"
-        )
-
-        st.write(
-            f"Total: S/ {credito['total']:,.2f}"
         )
 
         confirmar = st.checkbox(
