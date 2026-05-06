@@ -23,6 +23,8 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # LOGIN
 # =========================
 
+
+
 if "logueado" not in st.session_state:
     st.session_state["logueado"] = False
 
@@ -31,24 +33,37 @@ if not st.session_state["logueado"]:
     st.title("🔐 LOGIN VITAL CREDIT")
 
     usuario_input = st.text_input("Usuario")
-    contraseña_input = st.text_input("Contraseña", type="password")
+
+    password_input = st.text_input(
+        "Contraseña",
+        type="password"
+    )
 
     if st.button("Ingresar"):
 
-        response = supabase.table("usuarios").select("*").eq(
+        response = supabase.table(
+            "usuarios"
+        ).select("*").eq(
             "usuario",
             usuario_input
         ).eq(
-            "contraseña",
-            contraseña_input
+            "password",
+            password_input
         ).execute()
 
-        if response.data:
+        if len(response.data) > 0:
+
             st.session_state["logueado"] = True
+
             st.session_state["usuario"] = usuario_input
+
             st.rerun()
+
         else:
-            st.error("Usuario o contraseña incorrectos.")
+
+            st.error(
+                "Usuario o contraseña incorrectos."
+            )
 
     st.stop()
 
