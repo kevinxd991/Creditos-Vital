@@ -51,17 +51,23 @@ def subir_imagen(imagen):
     if imagen is None:
         return None
 
-    extension = imagen.name.split(".")[-1]
-    nombre = f"{uuid.uuid4()}.{extension}"
-    contenido = imagen.getvalue()
+    try:
+        extension = imagen.name.split(".")[-1]
+        nombre = f"{uuid.uuid4()}.{extension}"
+        contenido = imagen.getvalue()
 
-    supabase.storage.from_("ordenes").upload(
-        nombre,
-        contenido,
-        {"content-type": imagen.type}
-    )
+        supabase.storage.from_("ordenes").upload(
+            nombre,
+            contenido,
+            {"content-type": imagen.type}
+        )
 
-    return supabase.storage.from_("ordenes").get_public_url(nombre)
+        return supabase.storage.from_("ordenes").get_public_url(nombre)
+
+    except Exception as e:
+        st.error("No se pudo subir la imagen de la orden de compra.")
+        st.error(str(e))
+        return None
 
 
 st.title("💰 VITAL CREDIT")
@@ -84,7 +90,11 @@ menu = st.sidebar.radio(
 if menu == "Registrar crédito":
     st.subheader("Registrar crédito")
 
-    with st.form("form_registro"):
+    if "registro_exitoso" in st.session_state:
+        st.success(st.session_state["registro_exitoso"])
+        del st.session_state["registro_exitoso"]
+
+    with st.form("form_registro", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
 
         with col1:
@@ -137,7 +147,7 @@ if menu == "Registrar crédito":
                     "adicional": "Sí" if adicional else "No"
                 }).execute()
 
-                st.success("Crédito registrado correctamente.")
+                st.session_state["registro_exitoso"] = "Crédito registrado correctamente."
                 st.rerun()
 
 
@@ -154,19 +164,6 @@ if menu == "Ver créditos":
         st.info("No hay créditos registrados.")
     else:
         df["estado_real"] = df.apply(estado_real, axis=1)
-
-        total_general = df["total"].sum()
-        total_pendiente = df[df["estado_real"] != "Pagado"]["total"].sum()
-        total_pagado = df[df["estado_real"] == "Pagado"]["total"].sum()
-        total_vencido = df[df["estado_real"] == "Vencido"]["total"].sum()
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total general", f"S/ {total_general:,.2f}")
-        c2.metric("Pendiente", f"S/ {total_pendiente:,.2f}")
-        c3.metric("Pagado", f"S/ {total_pagado:,.2f}")
-        c4.metric("Vencido", f"S/ {total_vencido:,.2f}")
-
-        st.divider()
 
         col1, col2, col3 = st.columns(3)
 
@@ -195,6 +192,19 @@ if menu == "Ver créditos":
 
         if filtro_adicional != "Todos":
             df_filtrado = df_filtrado[df_filtrado["adicional"] == filtro_adicional]
+
+        total_general = df_filtrado["total"].sum()
+        total_pendiente = df_filtrado[df_filtrado["estado_real"] != "Pagado"]["total"].sum()
+        total_pagado = df_filtrado[df_filtrado["estado_real"] == "Pagado"]["total"].sum()
+        total_vencido = df_filtrado[df_filtrado["estado_real"] == "Vencido"]["total"].sum()
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total general", f"S/ {total_general:,.2f}")
+        c2.metric("Pendiente", f"S/ {total_pendiente:,.2f}")
+        c3.metric("Pagado", f"S/ {total_pagado:,.2f}")
+        c4.metric("Vencido", f"S/ {total_vencido:,.2f}")
+
+        st.divider()
 
         df_mostrar = df_filtrado[
             [
