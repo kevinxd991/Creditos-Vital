@@ -41,41 +41,27 @@ ESTADOS = [
 
 def cargar_creditos():
 
-    response = supabase.table(
-        "creditos"
-    ).select("*").order(
-        "id",
-        desc=True
-    ).execute()
-
-    data = response.data
-
-    if data:
-        return pd.DataFrame(data)
-
-    return pd.DataFrame()
-
-
-def estado_real(row):
-
-    hoy = date.today()
-
     try:
-        vencimiento = pd.to_datetime(
-            row["vencimiento"]
-        ).date()
 
-    except Exception:
-        return row["estado"]
+        response = supabase.table(
+            "creditos"
+        ).select("*").execute()
 
-    if (
-        row["estado"] != "Pagado"
-        and vencimiento < hoy
-    ):
-        return "Vencido"
+        st.write("RESPUESTA SUPABASE:")
+        st.write(response)
 
-    return row["estado"]
+        data = response.data
 
+        if data:
+            return pd.DataFrame(data)
+
+        return pd.DataFrame()
+
+    except Exception as e:
+
+        st.error(f"ERROR: {e}")
+
+        return pd.DataFrame()
 
 def subir_imagen(imagen):
 
